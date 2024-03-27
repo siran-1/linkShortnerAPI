@@ -108,7 +108,7 @@ jobs:
         run: zip -r deploy.zip .
 
       - name: Deploy to Elastic Beanstalk
-        run: |
+        run: 
           eb init -p node.js -r ${{ secrets.AWS_REGION }} ${{ secrets.EB_APPLICATION_NAME }}
           eb use ${{ secrets.EB_ENV_NAME }}
           eb deploy --staged

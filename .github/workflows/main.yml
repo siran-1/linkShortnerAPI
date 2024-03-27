@@ -1,0 +1,118 @@
+name: Node.js CI and SonarQube Analysis with Deployment
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+#=========================================
+  build:
+    name: Build Node.js Project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Use Node.js 20.5.1
+        uses: actions/setup-node@v2
+        with:
+          node-version: '20.5.1'
+      - name: Install dependencies
+        run: npm install
+#=========================================
+  sonarqube-analysis:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Set up JDK 11
+        uses: actions/setup-java@v2
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=dailyHub
+            -Dsonar.host.url=${{ secrets.SONAR_URL }} 
+            -Dsonar.login=${{ secrets.SONARQUBE_TOKEN }}
+#=========================================
+  terraform-apply:
+    name: Apply Terraform Configuration
+    runs-on: ubuntu-latest
+    needs: [build, sonarqube-analysis]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: "1.6.5" # specify your Terraform version
+          
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN}}
+          aws-region: 'us-east-1' 
+          
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+
+
+      - name: Terraform Plan
+        run: terraform plan
+        working-directory: ./terraform
+
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+#=========================================
+  deploy-to-eb:
+    name: Deploy to Elastic Beanstalk
+    runs-on: ubuntu-latest
+    needs: [build, sonarqube-analysis, terraform-apply]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python (required for EB CLI)
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+
+      - name: Install AWS Elastic Beanstalk CLI
+        run: pip install awsebcli
+
+      - name: Generate Deployment Package
+        run: zip -r deploy.zip .
+
+      - name: Deploy to Elastic Beanstalk
+        run: 
+          eb init -p node.js -r ${{ secrets.AWS_REGION }} ${{ secrets.EB_APPLICATION_NAME }}
+          eb use ${{ secrets.EB_ENV_NAME }}
+          eb deploy --staged
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{secrets.AWS_SESSION_TOKEN }}

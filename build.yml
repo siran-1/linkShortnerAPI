@@ -40,7 +40,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
         with:
           args: >
-            -Dsonar.projectKey=dailyHub
+            -Dsonar.projectKey=linkShortner
             -Dsonar.host.url=${{ secrets.SONAR_URL }} 
             -Dsonar.login=${{ secrets.SONARQUBE_TOKEN }}
 #=========================================
